@@ -1,0 +1,10 @@
+../misc/yas ncopy.ys
+./check-len.pl < ncopy.yo
+make drivers
+make psim VERSION=full
+./psim -t sdriver.yo
+./psim -t ldriver.yo
+
+
+./correctness.pl
+./benchmark.pl

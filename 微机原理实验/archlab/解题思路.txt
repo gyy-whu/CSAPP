@@ -1,0 +1,221 @@
+#/* $begin ncopy-ys */
+##################################################################
+# ncopy.ys - Copy a src block of len words to dst.
+# Return the number of positive words (>0) contained in src.
+#
+# Include your name and ID here.
+#
+# Describe how and why you modified the baseline code.
+#
+##################################################################
+# Do not modify this portion
+# Function prologue.
+# %rdi = src, %rsi = dst, %rdx = len
+ncopy:
+
+##################################################################
+# You can modify this portion
+#解题思路：首先就是使用iaddq的指令来代替，然后要消除load/use 冒险，但这样的操作下来还是0分。
+#考虑其他方法，发现最终要的是条件跳转，于是试图改变条件跳转的方式，修改jmp指令位置，减少预测错误的损失。
+#然后看提示知道要用循环展开
+#第一步就是要确定展开的路数：
+#理论上来讲，在输入数据长度无限大的前提下，循环展开的路数越多，性能就越好，当然代码量也会越大。
+#根据题目所给的代码量的限制，极限应该是9路展开，也就是说展开路数要小于9路，但这样展开的话，经过后续的一系列处理操作（暂时不提，后面再讲解），
+#最多能拿到的分数是56分左右，当然这个能不能有其他操作使得分数更高我不知道。
+#为了能拿更高的分数，回过头来也就只能尝试增加展开的路数，再根据题目的意思，通过一些操作（下面会讲）减少了代码量，最后控制在了998bytes，也就是满足条件
+#综上，我们展开的路数最终选择为10路
+#然后考虑余数常量部分，为了尽可能减少预测错误的损失，我们要尽可能减少预测，由于指令集本身就有大于，小于，等于的判断，我们采用三叉搜索树来进行余数常量部分的跳转。
+#当然，之所以要这么跳转是因为没有乘法指令，不能像以前一样直接根据余数进行跳转
+#然后就是三叉树的实现部分了：
+#首先考虑哪个元素放中间
+#树的RightLeft子树不跳转，写在Right里，节省10个字节，因此解释了上面的循环展开为什么可以增加至十路
+#因为CPU会预测指令会跳转，因此跳转指令的顺序应情况多的方向优先，所以将3放在root.middle，并设计出下列的三叉树
+#本题所使用的三叉搜索树的模型
+#                           root
+#                     /      |           \
+#                    1       3      /   |  \ 
+#                  /   \           /  \  6  /|\
+#                 0    2         4   5   7 8 9
+#剩下的具体操作看下面代码以及注释
+# Loop header
+	iaddq $-10,%rdx		#十路展开 len < 10?
+	jl Root			# 直接去余数常量部分goto Root:
+
+#余数常量部分的展开，并且通过内存读写指令的错位来消除气泡，提高效率
+Loop1:	mrmovq (%rdi), %r10	# 从src中读出val，下面10路是同样的操作
+	mrmovq 8(%rdi), %r11	# 从src中读出val，下面10路是同样的操作，这里运用了指令错位来消除气泡
+	rmmovq %r10, (%rsi)	# 把它存到det里面
+	andq %r10, %r10		# 判断val <= 0
+	jle Loop2		# 是的话直接跳转L oop2，下同
+	iaddq $0x1, %rax		# count++
+Loop2:	mrmovq 16(%rdi), %r10	# 从src中读出val，下同
+	rmmovq %r11, 8(%rsi)	# 把它存到det里面，下同
+	andq %r11, %r11		
+	jle Loop3		
+	iaddq $0x1, %rax		
+Loop3:	mrmovq 24(%rdi), %r11
+	rmmovq %r10, 16(%rsi)
+	andq %r10, %r10		
+	jle Loop4		
+	iaddq $0x1, %rax	
+Loop4:	mrmovq 32(%rdi), %r10
+	rmmovq %r11, 24(%rsi)
+	andq %r11, %r11	
+	jle Loop5	
+	iaddq $0x1, %rax	
+Loop5:	mrmovq 40(%rdi), %r11
+	rmmovq %r10, 32(%rsi)
+	andq %r10, %r10	
+	jle Loop6	
+	iaddq $0x1, %rax	
+Loop6:	mrmovq 48(%rdi), %r10
+	rmmovq %r11, 40(%rsi)
+	andq %r11, %r11
+	jle Loop7	
+	iaddq $0x1, %rax	
+Loop7:	mrmovq 56(%rdi), %r11
+	rmmovq %r10, 48(%rsi)
+	andq %r10, %r10	
+	jle Loop8	
+	iaddq $0x1, %rax	
+Loop8:	mrmovq 64(%rdi), %r10
+	rmmovq %r11, 56(%rsi)
+	andq %r11, %r11	
+	jle Loop9	
+	iaddq $0x1, %rax	
+Loop9:	mrmovq 72(%rdi), %r11
+	rmmovq %r10, 64(%rsi)
+	andq %r10, %r10		
+	jle Loop10	
+	iaddq $0x1, %rax		
+Loop10:	#mrmovq 64(%rdi), %r10
+	rmmovq %r11, 72(%rsi)	
+	andq %r11, %r11		# val <= 0?
+	jle Loop		# 小于0的话，进入Loop
+	iaddq $0x1, %rax		# count++
+
+
+
+Loop:
+	iaddq $0x50, %rdi	# src++，把十个数据的地址加上去，做好地址的对齐
+	iaddq $0x50, %rsi	# dst++，把十个数据的地址加上去，做好地址的对齐
+	iaddq $-10,%rdx		#len >= 10， 判断len是不是小于10了，小于的话就可以去下面计算余数常量部分了
+	jge Loop1		# 跳到Loop1，继续10路循环
+
+#######余数常量部分，这部分就是要实现对应的跳转，使用的是三叉搜索树
+#本题所使用的三叉搜索树的模型
+#                           root
+#                     /      |           \
+#                    1       3      /   |  \ 
+#                  /   \           /  \  6  /|\
+#                 0    2         4   5   7 8 9
+
+Root:
+	iaddq	$7,%rdx		# 3作为midlle，即root.middle,因为前面减过10，这里加7正好就是判断3
+	jl	Left                          #小的就在左子叶
+	jg	Right	                #大的就在右子叶
+	je	Remain3		# len == 3 Middle
+	
+
+Left:
+	iaddq	$2,%rdx		# len == 1,root.left
+	je	Remain1                  #跳到余数1
+	iaddq	$-1,%rdx	                # len == 2，root.left.left
+	je	Remain2                  #跳到余数2
+	ret			# len == 0，否则肯定是余数0，直接返回就好了
+Right:
+	iaddq	$-3,%rdx	                # len <= 6，6作为root.right.midlle
+	jg	RightRight               #大的就跳到root.right.right
+	je	Remain6		# 相等余数为6
+	iaddq	$1,%rdx		#直接判断是不是等于5
+	je	Remain5		# 是的话就跳到余数5
+	jmp	Remain4		# 虽然4、5都在root.right.left中，但判断完5之后，只剩下一种可能了就是余数4，所以直接跳转就ok了，可以节省字节空间
+	
+RightRight:
+	iaddq	$-2,%rdx                  #len == 8，root.right.right
+	jl	Remain7                  #小于就跳到余数7
+	je	Remain8                  #相等就跳到余数8
+
+Remain9:  #余数9
+	mrmovq 64(%rdi), %r11	# 读取数据
+	rmmovq %r11, 64(%rsi)          #写入数据余数9的位置
+	andq %r11, %r11		# 判断此时的val是否小于0
+
+Remain8:
+	mrmovq 56(%rdi), %r11      
+	jle Remain82		#判断这个val是不是小于等于0，注意这里的判断的是remain9的val
+	iaddq $0x1, %rax		#大于0就count+1
+
+Remain82:
+	
+	rmmovq %r11, 56(%rsi)          #写入数据余数8的位置
+	andq %r11, %r11		#之后用于判断这个remain7的val 是不是<= 0，这是一个交错的过程写入的同时，用于判断下一个的count要不要+1，
+                                                                #通过这种指令的错位来消除气泡，下面是一样的
+Remain7:
+	mrmovq 48(%rdi), %r11	
+	jle Remain72		
+	iaddq $0x1, %rax		
+Remain72:
+		
+	rmmovq %r11, 48(%rsi)
+	andq %r11, %r11		
+
+Remain6:
+	mrmovq 40(%rdi), %r11	
+	jle Remain62		
+	iaddq $0x1, %rax		
+Remain62:
+		
+	rmmovq %r11, 40(%rsi)
+	andq %r11, %r11		
+Remain5:
+	mrmovq 32(%rdi), %r11	
+	jle Remain52		
+	iaddq $0x1, %rax		
+Remain52:
+		
+	rmmovq %r11, 32(%rsi)
+	andq %r11, %r11		
+Remain4:
+	mrmovq 24(%rdi), %r11	
+	jle Remain42	
+	iaddq $0x1, %rax		
+Remain42:
+
+	rmmovq %r11, 24(%rsi)
+	andq %r11, %r11		
+Remain3:
+	mrmovq 16(%rdi), %r11	
+	jle Remain32		
+	iaddq $0x1, %rax		
+Remain32:
+
+	rmmovq %r11, 16(%rsi)
+	andq %r11, %r11		
+Remain2:
+	mrmovq 8(%rdi), %r11	
+	jle Remain22		
+	iaddq $0x1, %rax		
+Remain22:
+
+	rmmovq %r11, 8(%rsi)
+	andq %r11, %r11		
+Remain1:
+	mrmovq (%rdi), %r11	
+	jle Remain12		
+	iaddq $0x1, %rax		
+Remain12:
+	
+	rmmovq %r11, (%rsi)
+	andq %r11, %r11		
+	jle Done		
+	iaddq $0x1, %rax		
+##################################################################
+# Do not modify the following section of code
+# Function epilogue.
+Done:
+	ret
+##################################################################
+# Keep the following label at the end of your function
+End:
+#/* $end ncopy-ys */
